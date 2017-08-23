@@ -45,12 +45,23 @@ struct dependency_impl<dependency_concept<aux::type_list<Ts...>, no_name>, TDepe
 
 struct override {};
 
-template <class TScope, class TExpected, class TGiven, class TName, class TPriority>
+template<class, int, class T>
+struct ctor_arg {
+  ctor_arg() {}
+  explicit ctor_arg(T t) : value(t) { }
+  constexpr operator T() const  { return value; }
+
+private:
+  T value;
+};
+
+template <class TScope, class TExpected, class TGiven, class TName, class TPriority, class TCtor>
 class dependency
     : dependency_base,
       __BOOST_DI_ACCESS_WKND TScope::template scope<TExpected, TGiven>,
-      public dependency_impl<dependency_concept<TExpected, TName>, dependency<TScope, TExpected, TGiven, TName, TPriority>> {
-  template <class, class, class, class, class>
+      public dependency_impl<dependency_concept<TExpected, TName>, dependency<TScope, TExpected, TGiven, TName, TPriority, TCtor>>
+, public TCtor {
+  template <class, class, class, class, class, class>
   friend class dependency;
   using scope_t = typename TScope::template scope<TExpected, TGiven>;
 
@@ -97,43 +108,45 @@ class dependency
   using given = TGiven;
   using name = TName;
   using priority = TPriority;
+  using ctor = TCtor;
 
   dependency() noexcept {}
 
   template <class T>
   explicit dependency(T&& object) noexcept : scope_t(static_cast<T&&>(object)) {}
+  explicit dependency(TCtor ctor) noexcept : TCtor{ctor} {}
 
   template <class T, __BOOST_DI_REQUIRES(aux::is_same<TName, no_name>::value && !aux::is_same<T, no_name>::value) = 0>
   auto named() noexcept {
-    return dependency<TScope, TExpected, TGiven, T, TPriority>{static_cast<dependency&&>(*this)};
+    return dependency<TScope, TExpected, TGiven, T, TPriority, TCtor>{static_cast<dependency&&>(*this)};
   }
 
   template <class T, __BOOST_DI_REQUIRES(aux::is_same<TName, no_name>::value && !aux::is_same<T, no_name>::value) = 0>
   auto named(const T&) noexcept {
-    return dependency<TScope, TExpected, TGiven, T, TPriority>{static_cast<dependency&&>(*this)};
+    return dependency<TScope, TExpected, TGiven, T, TPriority, TCtor>{static_cast<dependency&&>(*this)};
   }
 
   template <class T, __BOOST_DI_REQUIRES_MSG(concepts::scopable<T>) = 0>
   auto in(const T&)noexcept {
-    return dependency<T, TExpected, TGiven, TName, TPriority>{};
+    return dependency<T, TExpected, TGiven, TName, TPriority, TCtor>{};
   }
 
   template <class T, __BOOST_DI_REQUIRES(!aux::is_array<TExpected, T>::value) = 0,
             __BOOST_DI_REQUIRES_MSG(concepts::boundable<TExpected, T>) = 0>
   auto to() noexcept {
-    return dependency<TScope, TExpected, T, TName, TPriority>{};
+    return dependency<TScope, TExpected, T, TName, TPriority, TCtor>{};
   }
 
   template <class... Ts, __BOOST_DI_REQUIRES(aux::is_array<TExpected, Ts...>::value) = 0>
   auto to() noexcept {
     using type = aux::remove_pointer_t<aux::remove_extent_t<TExpected>>;
-    return dependency<TScope, array<type>, array<type, Ts...>, TName, TPriority>{};
+    return dependency<TScope, array<type>, array<type, Ts...>, TName, TPriority, TCtor>{};
   }
 
   template <class T, __BOOST_DI_REQUIRES_MSG(concepts::boundable<TExpected, T>) = 0>
   auto to(std::initializer_list<T>&& object) noexcept {
     using type = aux::remove_pointer_t<aux::remove_extent_t<TExpected>>;
-    using dependency = dependency<scopes::instance, array<type>, std::initializer_list<T>, TName, TPriority>;
+    using dependency = dependency<scopes::instance, array<type>, std::initializer_list<T>, TName, TPriority, TCtor>;
     return dependency{object};
   }
 
@@ -141,7 +154,7 @@ class dependency
             __BOOST_DI_REQUIRES_MSG(concepts::boundable<deduce_traits_t<TExpected, T>, aux::decay_t<T>, aux::valid<>>) = 0>
   auto to(T&& object) noexcept {
     using dependency =
-        dependency<scopes::instance, deduce_traits_t<TExpected, T>, typename ref_traits<T>::type, TName, TPriority>;
+        dependency<scopes::instance, deduce_traits_t<TExpected, T>, typename ref_traits<T>::type, TName, TPriority, TCtor>;
     return dependency{static_cast<T&&>(object)};
   }
 
@@ -149,20 +162,27 @@ class dependency
             __BOOST_DI_REQUIRES_MSG(concepts::boundable<deduce_traits_t<TExpected, T>, aux::decay_t<T>, aux::valid<>>) = 0>
   auto to(T&& object) noexcept {
     using dependency = dependency<scopes::instance, deduce_traits_t<concepts::any_of<TExpected, TConcept>, T>,
-                                  typename ref_traits<T>::type, TName, TPriority>;
+                                  typename ref_traits<T>::type, TName, TPriority, TCtor>;
     return dependency{static_cast<T&&>(object)};
+  }
+
+  template <class T>
+  auto to2(int i, float f) noexcept {
+    using ctor_t = core::pool_t<ctor_arg<T, 0, int>, ctor_arg<T, 1, float>>;
+    using dependency = dependency<TScope, concepts::any_of<TExpected, T>, T, TName, TPriority, ctor_t>;
+    return dependency{ctor_t{ctor_arg<T, 0, int>{i}, ctor_arg<T, 1, float>{f}}};
   }
 
   template <template <class...> class T>
   auto to() noexcept {
-    return dependency<TScope, TExpected, aux::identity<T<>>, TName, TPriority>{};
+    return dependency<TScope, TExpected, aux::identity<T<>>, TName, TPriority, TCtor>{};
   }
 
   template <class...>
   dependency& to(...) const noexcept;
 
   auto operator[](const override&) noexcept {
-    return dependency<TScope, TExpected, TGiven, TName, override>{static_cast<dependency&&>(*this)};
+    return dependency<TScope, TExpected, TGiven, TName, override, TCtor>{static_cast<dependency&&>(*this)};
   }
 
 #if defined(__cpp_variable_templates)  // __pph__

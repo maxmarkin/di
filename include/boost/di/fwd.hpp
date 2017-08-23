@@ -61,7 +61,9 @@ struct array;
 
 struct deduced {};
 
-template <class, class TExpected = deduced, class = TExpected, class = no_name, class = void>
+struct none {};
+
+template <class, class TExpected = deduced, class = TExpected, class = no_name, class = void, class = none>
 class dependency;
 }  // core
 

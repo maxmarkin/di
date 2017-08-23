@@ -9,6 +9,7 @@
 
 #include "boost/di/aux_/type_traits.hpp"
 #include "boost/di/aux_/utility.hpp"
+#include "boost/di/core/pool.hpp"
 #include "boost/di/fwd.hpp"
 
 #if !defined(BOOST_DI_CFG_CTOR_LIMIT_SIZE)  // __pph__
@@ -77,6 +78,9 @@ struct ctor_traits__<T, _, aux::true_type> : aux::pair<T, aux::pair<direct, type
 
 template <class T, class _>
 struct ctor_traits__<T, _, aux::false_type> : ctor_traits_impl<T, _> {};
+
+template <class T, class... Ts>
+struct ctor_traits__<T, core::pool_t<Ts...>, aux::false_type> : aux::pair<T, aux::pair<direct, aux::type_list<Ts...>>> {};
 
 template <class T, class _>
 struct ctor_traits_impl<T, _, aux::true_type>

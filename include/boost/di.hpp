@@ -265,7 +265,8 @@ struct injector__ : T {
 template <class, class...>
 struct array;
 struct deduced {};
-template <class, class TExpected = deduced, class = TExpected, class = no_name, class = void>
+struct none {};
+template <class, class TExpected = deduced, class = TExpected, class = no_name, class = void, class = none>
 class dependency;
 }
 namespace scopes {
@@ -813,6 +814,21 @@ struct scopable__ {
 template <class T>
 using scopable = typename scopable__<T>::type;
 }
+namespace core {
+template <class = aux::type_list<>>
+struct pool;
+template <class... TArgs>
+using pool_t = pool<aux::type_list<TArgs...>>;
+template <class... TArgs>
+struct pool<aux::type_list<TArgs...>> : TArgs... {
+  template <class... Ts>
+  explicit pool(Ts... args) noexcept : Ts(static_cast<Ts&&>(args))... {}
+  template <class... Ts, class TPool>
+  pool(const aux::type_list<Ts...>&, TPool p) noexcept : pool(static_cast<Ts&&>(p)...) {
+    (void)p;
+  }
+};
+}
 #if !defined(BOOST_DI_CFG_CTOR_LIMIT_SIZE)
 #define BOOST_DI_CFG_CTOR_LIMIT_SIZE 10
 #endif
@@ -865,6 +881,8 @@ template <class T, class _>
 struct ctor_traits__<T, _, aux::true_type> : aux::pair<T, aux::pair<direct, typename T::boost_di_inject__::type>> {};
 template <class T, class _>
 struct ctor_traits__<T, _, aux::false_type> : ctor_traits_impl<T, _> {};
+template <class T, class... Ts>
+struct ctor_traits__<T, core::pool_t<Ts...>, aux::false_type> : aux::pair<T, aux::pair<direct, aux::type_list<Ts...>>> {};
 template <class T, class _>
 struct ctor_traits_impl<T, _, aux::true_type>
     : aux::pair<T, aux::pair<direct, typename ctor_traits<T>::boost_di_inject__::type>> {};
@@ -1591,12 +1609,22 @@ template <class... Ts, class TDependency>
 struct dependency_impl<dependency_concept<aux::type_list<Ts...>, no_name>, TDependency>
     : aux::pair<typename make_dependency_concept<Ts>::type, TDependency>... {};
 struct override {};
-template <class TScope, class TExpected, class TGiven, class TName, class TPriority>
-class dependency
-    : dependency_base,
-      __BOOST_DI_ACCESS_WKND TScope::template scope<TExpected, TGiven>,
-      public dependency_impl<dependency_concept<TExpected, TName>, dependency<TScope, TExpected, TGiven, TName, TPriority>> {
-  template <class, class, class, class, class>
+template <class, int, class T>
+struct ctor_arg {
+  ctor_arg() {}
+  explicit ctor_arg(T t) : value(t) {}
+  constexpr operator T() const { return value; }
+
+ private:
+  T value;
+};
+template <class TScope, class TExpected, class TGiven, class TName, class TPriority, class TCtor>
+class dependency : dependency_base,
+                   __BOOST_DI_ACCESS_WKND TScope::template scope<TExpected, TGiven>,
+                   public dependency_impl<dependency_concept<TExpected, TName>,
+                                          dependency<TScope, TExpected, TGiven, TName, TPriority, TCtor>>,
+                   public TCtor {
+  template <class, class, class, class, class, class>
   friend class dependency;
   using scope_t = typename TScope::template scope<TExpected, TGiven>;
   template <class T>
@@ -1635,59 +1663,67 @@ class dependency
   using given = TGiven;
   using name = TName;
   using priority = TPriority;
+  using ctor = TCtor;
   dependency() noexcept {}
   template <class T>
   explicit dependency(T&& object) noexcept : scope_t(static_cast<T&&>(object)) {}
+  explicit dependency(TCtor ctor) noexcept : TCtor{ctor} {}
   template <class T, __BOOST_DI_REQUIRES(aux::is_same<TName, no_name>::value && !aux::is_same<T, no_name>::value) = 0>
   auto named() noexcept {
-    return dependency<TScope, TExpected, TGiven, T, TPriority>{static_cast<dependency&&>(*this)};
+    return dependency<TScope, TExpected, TGiven, T, TPriority, TCtor>{static_cast<dependency&&>(*this)};
   }
   template <class T, __BOOST_DI_REQUIRES(aux::is_same<TName, no_name>::value && !aux::is_same<T, no_name>::value) = 0>
   auto named(const T&) noexcept {
-    return dependency<TScope, TExpected, TGiven, T, TPriority>{static_cast<dependency&&>(*this)};
+    return dependency<TScope, TExpected, TGiven, T, TPriority, TCtor>{static_cast<dependency&&>(*this)};
   }
   template <class T, __BOOST_DI_REQUIRES_MSG(concepts::scopable<T>) = 0>
   auto in(const T&)noexcept {
-    return dependency<T, TExpected, TGiven, TName, TPriority>{};
+    return dependency<T, TExpected, TGiven, TName, TPriority, TCtor>{};
   }
   template <class T, __BOOST_DI_REQUIRES(!aux::is_array<TExpected, T>::value) = 0,
             __BOOST_DI_REQUIRES_MSG(concepts::boundable<TExpected, T>) = 0>
   auto to() noexcept {
-    return dependency<TScope, TExpected, T, TName, TPriority>{};
+    return dependency<TScope, TExpected, T, TName, TPriority, TCtor>{};
   }
   template <class... Ts, __BOOST_DI_REQUIRES(aux::is_array<TExpected, Ts...>::value) = 0>
   auto to() noexcept {
     using type = aux::remove_pointer_t<aux::remove_extent_t<TExpected>>;
-    return dependency<TScope, array<type>, array<type, Ts...>, TName, TPriority>{};
+    return dependency<TScope, array<type>, array<type, Ts...>, TName, TPriority, TCtor>{};
   }
   template <class T, __BOOST_DI_REQUIRES_MSG(concepts::boundable<TExpected, T>) = 0>
   auto to(std::initializer_list<T>&& object) noexcept {
     using type = aux::remove_pointer_t<aux::remove_extent_t<TExpected>>;
-    using dependency = dependency<scopes::instance, array<type>, std::initializer_list<T>, TName, TPriority>;
+    using dependency = dependency<scopes::instance, array<type>, std::initializer_list<T>, TName, TPriority, TCtor>;
     return dependency{object};
   }
   template <class T, __BOOST_DI_REQUIRES(externable<T>::value) = 0,
             __BOOST_DI_REQUIRES_MSG(concepts::boundable<deduce_traits_t<TExpected, T>, aux::decay_t<T>, aux::valid<>>) = 0>
   auto to(T&& object) noexcept {
     using dependency =
-        dependency<scopes::instance, deduce_traits_t<TExpected, T>, typename ref_traits<T>::type, TName, TPriority>;
+        dependency<scopes::instance, deduce_traits_t<TExpected, T>, typename ref_traits<T>::type, TName, TPriority, TCtor>;
     return dependency{static_cast<T&&>(object)};
   }
   template <class TConcept, class T, __BOOST_DI_REQUIRES(externable<T>::value) = 0,
             __BOOST_DI_REQUIRES_MSG(concepts::boundable<deduce_traits_t<TExpected, T>, aux::decay_t<T>, aux::valid<>>) = 0>
   auto to(T&& object) noexcept {
     using dependency = dependency<scopes::instance, deduce_traits_t<concepts::any_of<TExpected, TConcept>, T>,
-                                  typename ref_traits<T>::type, TName, TPriority>;
+                                  typename ref_traits<T>::type, TName, TPriority, TCtor>;
     return dependency{static_cast<T&&>(object)};
+  }
+  template <class T>
+  auto to2(int i, float f) noexcept {
+    using ctor_t = core::pool_t<ctor_arg<T, 0, int>, ctor_arg<T, 1, float>>;
+    using dependency = dependency<TScope, concepts::any_of<TExpected, T>, T, TName, TPriority, ctor_t>;
+    return dependency{ctor_t{ctor_arg<T, 0, int>{i}, ctor_arg<T, 1, float>{f}}};
   }
   template <template <class...> class T>
   auto to() noexcept {
-    return dependency<TScope, TExpected, aux::identity<T<>>, TName, TPriority>{};
+    return dependency<TScope, TExpected, aux::identity<T<>>, TName, TPriority, TCtor>{};
   }
   template <class...>
   dependency& to(...) const noexcept;
   auto operator[](const override&) noexcept {
-    return dependency<TScope, TExpected, TGiven, TName, override>{static_cast<dependency&&>(*this)};
+    return dependency<TScope, TExpected, TGiven, TName, override, TCtor>{static_cast<dependency&&>(*this)};
   }
 #if defined(__cpp_variable_templates)
   dependency& operator()() noexcept { return *this; }
@@ -1702,21 +1738,6 @@ class dependency
   using scope_t::try_create;
   template <class, class>
   static void try_create(...);
-};
-}
-namespace core {
-template <class = aux::type_list<>>
-struct pool;
-template <class... TArgs>
-using pool_t = pool<aux::type_list<TArgs...>>;
-template <class... TArgs>
-struct pool<aux::type_list<TArgs...>> : TArgs... {
-  template <class... Ts>
-  explicit pool(Ts... args) noexcept : Ts(static_cast<Ts&&>(args))... {}
-  template <class... Ts, class TPool>
-  pool(const aux::type_list<Ts...>&, TPool p) noexcept : pool(static_cast<Ts&&>(p)...) {
-    (void)p;
-  }
 };
 }
 namespace concepts {
@@ -1918,18 +1939,18 @@ struct binder {
   static decltype(auto) resolve_impl(aux::pair<TConcept, TDependency>* dep) noexcept {
     return static_cast<TDependency&>(*dep);
   }
-  template <class, class TConcept, class TScope, class TExpected, class TGiven, class TName>
+  template <class, class TConcept, class TScope, class TExpected, class TGiven, class TName, class TCtor>
   static decltype(auto) resolve_impl(
-      aux::pair<TConcept, dependency<TScope, TExpected, TGiven, TName, override>>* dep) noexcept {
-    return static_cast<dependency<TScope, TExpected, TGiven, TName, override>&>(*dep);
+      aux::pair<TConcept, dependency<TScope, TExpected, TGiven, TName, override, TCtor>>* dep) noexcept {
+    return static_cast<dependency<TScope, TExpected, TGiven, TName, override, TCtor>&>(*dep);
   }
   template <class TDefault, class>
   static TDefault resolve_impl__(...);
   template <class, class TConcept, class TDependency>
   static TDependency resolve_impl__(aux::pair<TConcept, TDependency>*);
-  template <class, class TConcept, class TScope, class TExpected, class TGiven, class TName>
-  static dependency<TScope, TExpected, TGiven, TName, override> resolve_impl__(
-      aux::pair<TConcept, dependency<TScope, TExpected, TGiven, TName, override>>*);
+  template <class, class TConcept, class TScope, class TExpected, class TGiven, class TName, class TCtor>
+  static dependency<TScope, TExpected, TGiven, TName, override, TCtor> resolve_impl__(
+      aux::pair<TConcept, dependency<TScope, TExpected, TGiven, TName, override, TCtor>>*);
   template <class TDeps, class T, class TName, class TDefault>
   struct resolve__ {
     using type = decltype(resolve_impl__<TDefault, dependency_concept<aux::decay_t<T>, TName>>((TDeps*)0));
@@ -2362,8 +2383,8 @@ class injector : injector_base, pool<bindings_t<TDeps...>> {
   template <class T, class TName = no_name, class TIsRoot = aux::false_type>
   struct is_creatable {
     using dependency_t = binder::resolve_t<injector, T, TName>;
-    using ctor_t =
-        typename type_traits::ctor_traits__<binder::resolve_template_t<injector, typename dependency_t::given>, T>::type;
+    using ctor_t = typename type_traits::ctor_traits__<binder::resolve_template_t<injector, typename dependency_t::given>,
+                                                       typename dependency_t::ctor>::type;
     using ctor_args_t = typename ctor_t::second::second;
     static constexpr auto value =
         aux::is_convertible<decltype(dependency__<dependency_t>::template try_create<T, TName>(
@@ -2443,6 +2464,10 @@ class injector : injector_base, pool<bindings_t<TDeps...>> {
   struct try_create<::boost::di::v1_1_0::named<TName, T>> {
     using type = aux::conditional_t<is_creatable<T, TName>::value, T, void>;
   };
+  template <class TP, int N, class T>
+  struct try_create<core::ctor_arg<TP, N, T>> {
+    using type = aux::conditional_t<is_creatable<T>::value, T, void>;
+  };
   template <class T>
   struct try_create<self<T>> {
     using type = injector;
@@ -2471,6 +2496,11 @@ class injector : injector_base, pool<bindings_t<TDeps...>> {
   auto create_impl(const aux::type<::boost::di::v1_1_0::named<TName, T>>&) const {
     return create_impl__<TIsRoot, T, TName>();
   }
+  template <class TIsRoot = aux::false_type, class TP, int N, class T>
+  auto create_impl(const aux::type<core::ctor_arg<TP, N, T>>&) const {
+    auto& dependency = binder::resolve<TP>((injector*)this);
+    return static_cast<core::ctor_arg<TP, N, T>&>(dependency);
+  }
   template <class TIsRoot = aux::false_type, class T>
   auto create_successful_impl(const aux::type<T>&) const {
     return create_successful_impl__<TIsRoot, T>();
@@ -2494,6 +2524,11 @@ class injector : injector_base, pool<bindings_t<TDeps...>> {
   template <class TIsRoot = aux::false_type, class T, class TName>
   auto create_successful_impl(const aux::type<::boost::di::v1_1_0::named<TName, T>>&) const {
     return create_successful_impl__<TIsRoot, T, TName>();
+  }
+  template <class TIsRoot = aux::false_type, class TP, int N, class T>
+  auto create_successful_impl(const aux::type<core::ctor_arg<TP, N, T>>&) const {
+    auto& dependency = binder::resolve<TP>((injector*)this);
+    return static_cast<core::ctor_arg<TP, N, T>&>(dependency);
   }
   template <class TIsRoot = aux::false_type, class T>
   decltype(auto) create_successful_impl(const aux::type<self<T>>&) const {
@@ -2520,8 +2555,8 @@ class injector : injector_base, pool<bindings_t<TDeps...>> {
   auto create_impl__() const {
     auto&& dependency = binder::resolve<T, TName>((injector*)this);
     using dependency_t = aux::remove_reference_t<decltype(dependency)>;
-    using ctor_t =
-        typename type_traits::ctor_traits__<binder::resolve_template_t<injector, typename dependency_t::given>, T>::type;
+    using ctor_t = typename type_traits::ctor_traits__<binder::resolve_template_t<injector, typename dependency_t::given>,
+                                                       typename dependency_t::ctor>::type;
     using provider_t = core::provider<ctor_t, TName, injector>;
     using wrapper_t =
         decltype(static_cast<dependency__<dependency_t>&>(dependency).template create<T, TName>(provider_t{this}));
@@ -2534,8 +2569,8 @@ class injector : injector_base, pool<bindings_t<TDeps...>> {
   auto create_successful_impl__() const {
     auto&& dependency = binder::resolve<T, TName>((injector*)this);
     using dependency_t = aux::remove_reference_t<decltype(dependency)>;
-    using ctor_t =
-        typename type_traits::ctor_traits__<binder::resolve_template_t<injector, typename dependency_t::given>, T>::type;
+    using ctor_t = typename type_traits::ctor_traits__<binder::resolve_template_t<injector, typename dependency_t::given>,
+                                                       typename dependency_t::ctor>::type;
     using provider_t = successful::provider<ctor_t, injector>;
     using wrapper_t =
         decltype(static_cast<dependency__<dependency_t>&>(dependency).template create<T, TName>(provider_t{this}));
@@ -2557,8 +2592,8 @@ class injector<TConfig, pool<>, TDeps...> : injector_base, pool<bindings_t<TDeps
   template <class T, class TName = no_name, class TIsRoot = aux::false_type>
   struct is_creatable {
     using dependency_t = binder::resolve_t<injector, T, TName>;
-    using ctor_t =
-        typename type_traits::ctor_traits__<binder::resolve_template_t<injector, typename dependency_t::given>, T>::type;
+    using ctor_t = typename type_traits::ctor_traits__<binder::resolve_template_t<injector, typename dependency_t::given>,
+                                                       typename dependency_t::ctor>::type;
     using ctor_args_t = typename ctor_t::second::second;
     static constexpr auto value =
         aux::is_convertible<decltype(dependency__<dependency_t>::template try_create<T, TName>(
@@ -2637,6 +2672,10 @@ class injector<TConfig, pool<>, TDeps...> : injector_base, pool<bindings_t<TDeps
   struct try_create<::boost::di::v1_1_0::named<TName, T>> {
     using type = aux::conditional_t<is_creatable<T, TName>::value, T, void>;
   };
+  template <class TP, int N, class T>
+  struct try_create<core::ctor_arg<TP, N, T>> {
+    using type = aux::conditional_t<is_creatable<T>::value, T, void>;
+  };
   template <class T>
   struct try_create<self<T>> {
     using type = injector;
@@ -2665,6 +2704,11 @@ class injector<TConfig, pool<>, TDeps...> : injector_base, pool<bindings_t<TDeps
   auto create_impl(const aux::type<::boost::di::v1_1_0::named<TName, T>>&) const {
     return create_impl__<TIsRoot, T, TName>();
   }
+  template <class TIsRoot = aux::false_type, class TP, int N, class T>
+  auto create_impl(const aux::type<core::ctor_arg<TP, N, T>>&) const {
+    auto& dependency = binder::resolve<TP>((injector*)this);
+    return static_cast<core::ctor_arg<TP, N, T>&>(dependency);
+  }
   template <class TIsRoot = aux::false_type, class T>
   auto create_successful_impl(const aux::type<T>&) const {
     return create_successful_impl__<TIsRoot, T>();
@@ -2688,6 +2732,11 @@ class injector<TConfig, pool<>, TDeps...> : injector_base, pool<bindings_t<TDeps
   template <class TIsRoot = aux::false_type, class T, class TName>
   auto create_successful_impl(const aux::type<::boost::di::v1_1_0::named<TName, T>>&) const {
     return create_successful_impl__<TIsRoot, T, TName>();
+  }
+  template <class TIsRoot = aux::false_type, class TP, int N, class T>
+  auto create_successful_impl(const aux::type<core::ctor_arg<TP, N, T>>&) const {
+    auto& dependency = binder::resolve<TP>((injector*)this);
+    return static_cast<core::ctor_arg<TP, N, T>&>(dependency);
   }
   template <class TIsRoot = aux::false_type, class T>
   decltype(auto) create_successful_impl(const aux::type<self<T>>&) const {
@@ -2714,8 +2763,8 @@ class injector<TConfig, pool<>, TDeps...> : injector_base, pool<bindings_t<TDeps
   auto create_impl__() const {
     auto&& dependency = binder::resolve<T, TName>((injector*)this);
     using dependency_t = aux::remove_reference_t<decltype(dependency)>;
-    using ctor_t =
-        typename type_traits::ctor_traits__<binder::resolve_template_t<injector, typename dependency_t::given>, T>::type;
+    using ctor_t = typename type_traits::ctor_traits__<binder::resolve_template_t<injector, typename dependency_t::given>,
+                                                       typename dependency_t::ctor>::type;
     using provider_t = core::provider<ctor_t, TName, injector>;
     using wrapper_t =
         decltype(static_cast<dependency__<dependency_t>&>(dependency).template create<T, TName>(provider_t{this}));
@@ -2726,8 +2775,8 @@ class injector<TConfig, pool<>, TDeps...> : injector_base, pool<bindings_t<TDeps
   auto create_successful_impl__() const {
     auto&& dependency = binder::resolve<T, TName>((injector*)this);
     using dependency_t = aux::remove_reference_t<decltype(dependency)>;
-    using ctor_t =
-        typename type_traits::ctor_traits__<binder::resolve_template_t<injector, typename dependency_t::given>, T>::type;
+    using ctor_t = typename type_traits::ctor_traits__<binder::resolve_template_t<injector, typename dependency_t::given>,
+                                                       typename dependency_t::ctor>::type;
     using provider_t = successful::provider<ctor_t, injector>;
     using wrapper_t =
         decltype(static_cast<dependency__<dependency_t>&>(dependency).template create<T, TName>(provider_t{this}));

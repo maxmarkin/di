@@ -25,10 +25,10 @@ struct binder {
     return static_cast<TDependency&>(*dep);
   }
 
-  template <class, class TConcept, class TScope, class TExpected, class TGiven, class TName>
+  template <class, class TConcept, class TScope, class TExpected, class TGiven, class TName, class TCtor>
   static decltype(auto) resolve_impl(
-      aux::pair<TConcept, dependency<TScope, TExpected, TGiven, TName, override>>* dep) noexcept {
-    return static_cast<dependency<TScope, TExpected, TGiven, TName, override>&>(*dep);
+      aux::pair<TConcept, dependency<TScope, TExpected, TGiven, TName, override, TCtor>>* dep) noexcept {
+    return static_cast<dependency<TScope, TExpected, TGiven, TName, override, TCtor>&>(*dep);
   }
 
   template <class TDefault, class>
@@ -37,9 +37,9 @@ struct binder {
   template <class, class TConcept, class TDependency>
   static TDependency resolve_impl__(aux::pair<TConcept, TDependency>*);
 
-  template <class, class TConcept, class TScope, class TExpected, class TGiven, class TName>
-  static dependency<TScope, TExpected, TGiven, TName, override> resolve_impl__(
-      aux::pair<TConcept, dependency<TScope, TExpected, TGiven, TName, override>>*);
+  template <class, class TConcept, class TScope, class TExpected, class TGiven, class TName, class TCtor>
+  static dependency<TScope, TExpected, TGiven, TName, override, TCtor> resolve_impl__(
+      aux::pair<TConcept, dependency<TScope, TExpected, TGiven, TName, override, TCtor>>*);
 
   template <class TDeps, class T, class TName, class TDefault>
   struct resolve__ {
