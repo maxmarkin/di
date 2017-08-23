@@ -1613,7 +1613,7 @@ struct dependency_impl<dependency_concept<aux::type_list<Ts...>, no_name>, TDepe
 struct override {};
 template <class, int, class T>
 struct ctor_arg {
-  explicit ctor_arg(T t) : value(t) {}
+  explicit ctor_arg(T&& t) : value(static_cast<T&&>(t)) {}
   constexpr operator T() const { return value; }
 
  private:
@@ -1667,7 +1667,7 @@ class dependency : dependency_base,
   using ctor = TCtor;
   dependency() noexcept {}
   template <class T>
-  explicit dependency(T&& object) noexcept : scope_t(static_cast<T&&>(object)), TCtor{static_cast<T&&>(object)} {}
+  explicit dependency(T&& object) noexcept : scope_t(static_cast<T&&>(object)) {}
   explicit dependency(TCtor&& ctor) noexcept : TCtor{static_cast<TCtor&&>(ctor)} {}
   template <class T, __BOOST_DI_REQUIRES(aux::is_same<TName, no_name>::value && !aux::is_same<T, no_name>::value) = 0>
   auto named() noexcept {
