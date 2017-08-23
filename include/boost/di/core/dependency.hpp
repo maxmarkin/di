@@ -17,6 +17,9 @@
 #include "boost/di/scopes/deduce.hpp"
 #include "boost/di/scopes/instance.hpp"
 
+struct inject_me {
+} __;
+
 namespace core {
 
 template <class, class>
@@ -45,22 +48,22 @@ struct dependency_impl<dependency_concept<aux::type_list<Ts...>, no_name>, TDepe
 
 struct override {};
 
-template<class, int, class T>
+template <class, int, class T>
 struct ctor_arg {
   ctor_arg() {}
-  explicit ctor_arg(T t) : value(t) { }
-  constexpr operator T() const  { return value; }
+  explicit ctor_arg(T t) : value(t) {}
+  constexpr operator T() const { return value; }
 
-private:
+ private:
   T value;
 };
 
 template <class TScope, class TExpected, class TGiven, class TName, class TPriority, class TCtor>
-class dependency
-    : dependency_base,
-      __BOOST_DI_ACCESS_WKND TScope::template scope<TExpected, TGiven>,
-      public dependency_impl<dependency_concept<TExpected, TName>, dependency<TScope, TExpected, TGiven, TName, TPriority, TCtor>>
-, public TCtor {
+class dependency : dependency_base,
+                   __BOOST_DI_ACCESS_WKND TScope::template scope<TExpected, TGiven>,
+                   public dependency_impl<dependency_concept<TExpected, TName>,
+                                          dependency<TScope, TExpected, TGiven, TName, TPriority, TCtor>>,
+                   public TCtor {
   template <class, class, class, class, class, class>
   friend class dependency;
   using scope_t = typename TScope::template scope<TExpected, TGiven>;
@@ -114,7 +117,7 @@ class dependency
 
   template <class T>
   explicit dependency(T&& object) noexcept : scope_t(static_cast<T&&>(object)) {}
-  explicit dependency(TCtor ctor) noexcept : TCtor{ctor} {}
+  explicit dependency(TCtor&& ctor) noexcept : TCtor{ctor} {}
 
   template <class T, __BOOST_DI_REQUIRES(aux::is_same<TName, no_name>::value && !aux::is_same<T, no_name>::value) = 0>
   auto named() noexcept {
@@ -167,10 +170,10 @@ class dependency
   }
 
   template <class T>
-  auto to2(int i, float f) noexcept {
-    using ctor_t = core::pool_t<ctor_arg<T, 0, int>, ctor_arg<T, 1, float>>;
+  auto to2(int i, float f, inject_me) noexcept {
+    using ctor_t = core::pool_t<ctor_arg<T, 0, int>, ctor_arg<T, 1, float>, core::any_type_fwd<T>>;
     using dependency = dependency<TScope, concepts::any_of<TExpected, T>, T, TName, TPriority, ctor_t>;
-    return dependency{ctor_t{ctor_arg<T, 0, int>{i}, ctor_arg<T, 1, float>{f}}};
+    return dependency{ctor_t{ctor_arg<T, 0, int>{i}, ctor_arg<T, 1, float>{f}, core::any_type_fwd<T>{}}};
   }
 
   template <template <class...> class T>
@@ -191,9 +194,9 @@ class dependency
 
 #if defined(__MSVC__)  // __pph__
  public:
-#else // __pph__
+#else   // __pph__
  protected:
-#endif // __pph__
+#endif  // __pph__
   using scope_t::is_referable;
   using scope_t::create;
   using scope_t::try_create;

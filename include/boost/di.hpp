@@ -1589,6 +1589,8 @@ class instance {
   };
 };
 }
+struct inject_me {
+} __;
 namespace core {
 template <class, class>
 struct dependency_concept {};
@@ -1667,7 +1669,7 @@ class dependency : dependency_base,
   dependency() noexcept {}
   template <class T>
   explicit dependency(T&& object) noexcept : scope_t(static_cast<T&&>(object)) {}
-  explicit dependency(TCtor ctor) noexcept : TCtor{ctor} {}
+  explicit dependency(TCtor&& ctor) noexcept : TCtor{ctor} {}
   template <class T, __BOOST_DI_REQUIRES(aux::is_same<TName, no_name>::value && !aux::is_same<T, no_name>::value) = 0>
   auto named() noexcept {
     return dependency<TScope, TExpected, TGiven, T, TPriority, TCtor>{static_cast<dependency&&>(*this)};
@@ -1711,10 +1713,10 @@ class dependency : dependency_base,
     return dependency{static_cast<T&&>(object)};
   }
   template <class T>
-  auto to2(int i, float f) noexcept {
-    using ctor_t = core::pool_t<ctor_arg<T, 0, int>, ctor_arg<T, 1, float>>;
+  auto to2(int i, float f, inject_me) noexcept {
+    using ctor_t = core::pool_t<ctor_arg<T, 0, int>, ctor_arg<T, 1, float>, core::any_type_fwd<T>>;
     using dependency = dependency<TScope, concepts::any_of<TExpected, T>, T, TName, TPriority, ctor_t>;
-    return dependency{ctor_t{ctor_arg<T, 0, int>{i}, ctor_arg<T, 1, float>{f}}};
+    return dependency{ctor_t{ctor_arg<T, 0, int>{i}, ctor_arg<T, 1, float>{f}, core::any_type_fwd<T>{}}};
   }
   template <template <class...> class T>
   auto to() noexcept {
@@ -2466,7 +2468,7 @@ class injector : injector_base, pool<bindings_t<TDeps...>> {
   };
   template <class TP, int N, class T>
   struct try_create<core::ctor_arg<TP, N, T>> {
-    using type = aux::conditional_t<is_creatable<T>::value, T, void>;
+    using type = T;
   };
   template <class T>
   struct try_create<self<T>> {
@@ -2674,7 +2676,7 @@ class injector<TConfig, pool<>, TDeps...> : injector_base, pool<bindings_t<TDeps
   };
   template <class TP, int N, class T>
   struct try_create<core::ctor_arg<TP, N, T>> {
-    using type = aux::conditional_t<is_creatable<T>::value, T, void>;
+    using type = T;
   };
   template <class T>
   struct try_create<self<T>> {
