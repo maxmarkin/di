@@ -1589,9 +1589,9 @@ class instance {
   };
 };
 }
-struct inject_me {
-} __;
 namespace core {
+struct inject {
+} _;
 template <class, class>
 struct dependency_concept {};
 template <class T, class TDependency>
@@ -1613,7 +1613,6 @@ struct dependency_impl<dependency_concept<aux::type_list<Ts...>, no_name>, TDepe
 struct override {};
 template <class, int, class T>
 struct ctor_arg {
-  ctor_arg() {}
   explicit ctor_arg(T t) : value(t) {}
   constexpr operator T() const { return value; }
 
@@ -1668,8 +1667,8 @@ class dependency : dependency_base,
   using ctor = TCtor;
   dependency() noexcept {}
   template <class T>
-  explicit dependency(T&& object) noexcept : scope_t(static_cast<T&&>(object)) {}
-  explicit dependency(TCtor&& ctor) noexcept : TCtor{ctor} {}
+  explicit dependency(T&& object) noexcept : scope_t(static_cast<T&&>(object)), TCtor{static_cast<T&&>(object)} {}
+  explicit dependency(TCtor&& ctor) noexcept : TCtor{static_cast<TCtor&&>(ctor)} {}
   template <class T, __BOOST_DI_REQUIRES(aux::is_same<TName, no_name>::value && !aux::is_same<T, no_name>::value) = 0>
   auto named() noexcept {
     return dependency<TScope, TExpected, TGiven, T, TPriority, TCtor>{static_cast<dependency&&>(*this)};
@@ -1712,11 +1711,23 @@ class dependency : dependency_base,
                                   typename ref_traits<T>::type, TName, TPriority, TCtor>;
     return dependency{static_cast<T&&>(object)};
   }
-  template <class T>
-  auto to2(int i, float f, inject_me) noexcept {
-    using ctor_t = core::pool_t<ctor_arg<T, 0, int>, ctor_arg<T, 1, float>, core::any_type_fwd<T>>;
+  template <class T, class... Ts>
+  auto to2(Ts&&... args) noexcept {
+    return to2_impl<T>(aux::make_index_sequence<sizeof...(Ts)>{}, static_cast<Ts&&>(args)...);
+  }
+  template <class TP, int N, class T>
+  struct ctor_arg_traits {
+    using type = ctor_arg<TP, N, T>;
+  };
+  template <class TP, int N>
+  struct ctor_arg_traits<TP, N, inject&> {
+    using type = any_type_ref_fwd<TP>;
+  };
+  template <class T, int... Ns, class... Ts>
+  auto to2_impl(aux::index_sequence<Ns...>, Ts&&... args) noexcept {
+    using ctor_t = core::pool_t<typename ctor_arg_traits<T, Ns, Ts>::type...>;
     using dependency = dependency<TScope, concepts::any_of<TExpected, T>, T, TName, TPriority, ctor_t>;
-    return dependency{ctor_t{ctor_arg<T, 0, int>{i}, ctor_arg<T, 1, float>{f}, core::any_type_fwd<T>{}}};
+    return dependency{ctor_t{typename ctor_arg_traits<T, Ns, Ts>::type(static_cast<Ts&&>(args))...}};
   }
   template <template <class...> class T>
   auto to() noexcept {
@@ -2164,6 +2175,7 @@ struct any_type_fwd {
 };
 template <class>
 struct any_type_ref_fwd {
+  any_type_ref_fwd(...) {}
   template <class T>
   operator T();
   template <class T>
@@ -2342,7 +2354,8 @@ struct copyable;
 template <class T>
 struct copyable_impl
     : aux::conditional<
-          aux::is_default_constructible<typename T::scope::template scope<typename T::expected, typename T::given>>::value,
+          aux::is_default_constructible<typename T::scope::template scope<typename T::expected, typename T::given>>::value &&
+              !aux::is_default_constructible<T>::value,
           aux::type_list<>, aux::type_list<T>> {};
 template <class... TDeps>
 struct copyable<aux::type_list<TDeps...>> : aux::join<typename copyable_impl<TDeps>::type...> {};

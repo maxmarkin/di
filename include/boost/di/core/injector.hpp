@@ -37,7 +37,8 @@ struct copyable;
 template <class T>
 struct copyable_impl
     : aux::conditional<
-          aux::is_default_constructible<typename T::scope::template scope<typename T::expected, typename T::given>>::value,
+          aux::is_default_constructible<typename T::scope::template scope<typename T::expected, typename T::given>>::value
+      && !aux::is_default_constructible<T>::value,
           aux::type_list<>, aux::type_list<T>> {};
 
 template <class... TDeps>

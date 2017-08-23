@@ -222,6 +222,8 @@ struct any_type_fwd {
 
 template <class>
 struct any_type_ref_fwd {
+  any_type_ref_fwd(...){}
+
   template <class T>
   operator T();
 
