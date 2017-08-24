@@ -119,6 +119,11 @@ class dependency : dependency_base,
     using type = concepts::any_of<T, U>;
   };
 
+  template <class... Ts, class T>
+  struct any_of_traits<concepts::any_of<Ts...>, T> {
+    using type = concepts::any_of<Ts..., T>;
+  };
+
   template <class T>
   struct any_of_traits<T, T> {
     using type = T;
@@ -135,8 +140,8 @@ class dependency : dependency_base,
   dependency() noexcept {}
 
   template <class T>
-  explicit dependency(T&& object) noexcept : scope_t(static_cast<T&&>(object)) {}
-  explicit dependency(TCtor&& ctor) noexcept : TCtor{static_cast<TCtor&&>(ctor)} {}
+  explicit dependency(T&& object) noexcept : scope_t(static_cast<T&&>(object)) { }
+  explicit dependency(TCtor&& ctor) noexcept : TCtor{static_cast<TCtor&&>(ctor)} { }
 
   template <class T, __BOOST_DI_REQUIRES(aux::is_same<TName, no_name>::value && !aux::is_same<T, no_name>::value) = 0>
   auto named() noexcept {
@@ -165,6 +170,11 @@ class dependency : dependency_base,
     return dependency<TScope, array<type>, array<type, Ts...>, TName, TPriority, TCtor>{};
   }
 
+  template <template <class...> class T>
+  auto to() noexcept {
+    return dependency<TScope, TExpected, aux::identity<T<>>, TName, TPriority, TCtor>{};
+  }
+
   template <class T, __BOOST_DI_REQUIRES_MSG(concepts::boundable<TExpected, T>) = 0>
   auto to(std::initializer_list<T>&& object) noexcept {
     using type = aux::remove_pointer_t<aux::remove_extent_t<TExpected>>;
@@ -178,7 +188,7 @@ class dependency : dependency_base,
                                     aux::decay_t<T>, aux::valid<>>) = 0>
   auto to(T&& object) noexcept {
     using dependency =
-        dependency<scopes::instance, deduce_traits_t<TExpected, typename any_of_traits<TExpected, aux::decay_t<T>>::type>,
+        dependency<scopes::instance, deduce_traits_t<TExpected, int>,
                    typename ref_traits<T>::type, TName, TPriority, TCtor>;
     return dependency{static_cast<T&&>(object)};
   }
@@ -186,11 +196,6 @@ class dependency : dependency_base,
   template <class T, class... Ts>
   auto to(Ts&&... args) noexcept {
     return to_impl<T>(aux::make_index_sequence<sizeof...(Ts)>{}, static_cast<Ts&&>(args)...);
-  }
-
-  template <template <class...> class T>
-  auto to() noexcept {
-    return dependency<TScope, TExpected, aux::identity<T<>>, TName, TPriority, TCtor>{};
   }
 
   template <class...>

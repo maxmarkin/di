@@ -114,7 +114,7 @@ class instance {
     template <class>
     using is_referable = aux::true_type;
 
-    explicit scope(TGiven& object) : object_{object} {}
+    explicit scope(TGiven& object) : object_{object} { }
 
     template <class, class, class TProvider>
     static wrappers::shared<instance, TGiven&> try_create(const TProvider&);
