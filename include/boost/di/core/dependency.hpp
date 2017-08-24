@@ -17,9 +17,12 @@
 #include "boost/di/scopes/deduce.hpp"
 #include "boost/di/scopes/instance.hpp"
 
-namespace core {
+namespace placeholders {
+struct arg {
+} _;
+}  // placeholders
 
-struct inject {} _;
+namespace core {
 
 template <class, class>
 struct dependency_concept {};
@@ -103,6 +106,16 @@ class dependency : dependency_base,
   template <class T, class U>
   using deduce_traits_t = typename deduce_traits<T, U>::type;
 
+  template <class TP, int N, class T>
+  struct ctor_arg_traits {
+    using type = ctor_arg<TP, N, T>;
+  };
+
+  template <class TP, int N>
+  struct ctor_arg_traits<TP, N, placeholders::arg&> {
+    using type = any_type_ref_fwd<TP>;
+  };
+
  public:
   using scope = TScope;
   using expected = TExpected;
@@ -115,7 +128,7 @@ class dependency : dependency_base,
 
   template <class T>
   explicit dependency(T&& object) noexcept : scope_t(static_cast<T&&>(object)) {}
-  explicit dependency(TCtor&& ctor) noexcept : TCtor{static_cast<TCtor&&>(ctor)} { }
+  explicit dependency(TCtor&& ctor) noexcept : TCtor{static_cast<TCtor&&>(ctor)} {}
 
   template <class T, __BOOST_DI_REQUIRES(aux::is_same<TName, no_name>::value && !aux::is_same<T, no_name>::value) = 0>
   auto named() noexcept {
@@ -154,39 +167,14 @@ class dependency : dependency_base,
   template <class T, __BOOST_DI_REQUIRES(externable<T>::value) = 0,
             __BOOST_DI_REQUIRES_MSG(concepts::boundable<deduce_traits_t<TExpected, T>, aux::decay_t<T>, aux::valid<>>) = 0>
   auto to(T&& object) noexcept {
-    using dependency =
-        dependency<scopes::instance, deduce_traits_t<TExpected, T>, typename ref_traits<T>::type, TName, TPriority, TCtor>;
-    return dependency{static_cast<T&&>(object)};
-  }
-
-  template <class TConcept, class T, __BOOST_DI_REQUIRES(externable<T>::value) = 0,
-            __BOOST_DI_REQUIRES_MSG(concepts::boundable<deduce_traits_t<TExpected, T>, aux::decay_t<T>, aux::valid<>>) = 0>
-  auto to(T&& object) noexcept {
-    using dependency = dependency<scopes::instance, deduce_traits_t<concepts::any_of<TExpected, TConcept>, T>,
+    using dependency = dependency<scopes::instance, deduce_traits_t<concepts::any_of<TExpected, aux::decay_t<T>>, T>,
                                   typename ref_traits<T>::type, TName, TPriority, TCtor>;
     return dependency{static_cast<T&&>(object)};
   }
 
   template <class T, class... Ts>
-  auto to2(Ts&&... args) noexcept {
-    return to2_impl<T>(aux::make_index_sequence<sizeof...(Ts)>{}, static_cast<Ts&&>(args)...);
-  }
-
-  template<class TP, int N, class T>
-  struct ctor_arg_traits {
-    using type = ctor_arg<TP, N, T>;
-  };
-
-  template<class TP, int N>
-  struct ctor_arg_traits<TP, N, inject&> {
-    using type = any_type_ref_fwd<TP>;
-  };
-
-  template <class T, int... Ns, class... Ts>
-  auto to2_impl(aux::index_sequence<Ns...>, Ts&&... args) noexcept {
-    using ctor_t = core::pool_t<typename ctor_arg_traits<T, Ns, Ts>::type...>;
-    using dependency = dependency<TScope, concepts::any_of<TExpected, T>, T, TName, TPriority, ctor_t>;
-    return dependency{ctor_t{typename ctor_arg_traits<T, Ns, Ts>::type(static_cast<Ts&&>(args))...}};
+  auto to(Ts&&... args) noexcept {
+    return to_impl<T>(aux::make_index_sequence<sizeof...(Ts)>{}, static_cast<Ts&&>(args)...);
   }
 
   template <template <class...> class T>
@@ -215,6 +203,14 @@ class dependency : dependency_base,
   using scope_t::try_create;
   template <class, class>
   static void try_create(...);
+
+ private:
+  template <class T, int... Ns, class... Ts>
+  auto to_impl(aux::index_sequence<Ns...>, Ts&&... args) noexcept {
+    using ctor_t = core::pool_t<typename ctor_arg_traits<T, Ns, Ts>::type...>;
+    using dependency = dependency<TScope, concepts::any_of<TExpected, T>, T, TName, TPriority, ctor_t>;
+    return dependency{ctor_t{typename ctor_arg_traits<T, Ns, Ts>::type(static_cast<Ts&&>(args))...}};
+  }
 };
 
 }  // core
