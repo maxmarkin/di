@@ -1590,9 +1590,7 @@ class instance {
 };
 }
 namespace placeholders {
-struct arg {
-} _;
-}
+static struct arg { } _; }
 namespace core {
 template <class, class>
 struct dependency_concept {};
@@ -1665,7 +1663,15 @@ class dependency : dependency_base,
   };
   template <class TP, int N>
   struct ctor_arg_traits<TP, N, placeholders::arg&> {
-    using type = any_type_ref_fwd<TP>;
+    using type = any_type_1st_ref_fwd<TP>;
+  };
+  template <class T, class U>
+  struct any_of_traits {
+    using type = concepts::any_of<T, U>;
+  };
+  template <class T>
+  struct any_of_traits<T, T> {
+    using type = T;
   };
 
  public:
@@ -1708,10 +1714,13 @@ class dependency : dependency_base,
     return dependency{object};
   }
   template <class T, __BOOST_DI_REQUIRES(externable<T>::value) = 0,
-            __BOOST_DI_REQUIRES_MSG(concepts::boundable<deduce_traits_t<TExpected, T>, aux::decay_t<T>, aux::valid<>>) = 0>
+            __BOOST_DI_REQUIRES_MSG(
+                concepts::boundable<deduce_traits_t<TExpected, typename any_of_traits<TExpected, aux::decay_t<T>>::type>,
+                                    aux::decay_t<T>, aux::valid<>>) = 0>
   auto to(T&& object) noexcept {
-    using dependency = dependency<scopes::instance, deduce_traits_t<concepts::any_of<TExpected, aux::decay_t<T>>, T>,
-                                  typename ref_traits<T>::type, TName, TPriority, TCtor>;
+    using dependency =
+        dependency<scopes::instance, deduce_traits_t<TExpected, typename any_of_traits<TExpected, aux::decay_t<T>>::type>,
+                   typename ref_traits<T>::type, TName, TPriority, TCtor>;
     return dependency{static_cast<T&&>(object)};
   }
   template <class T, class... Ts>
@@ -1745,7 +1754,7 @@ class dependency : dependency_base,
   template <class T, int... Ns, class... Ts>
   auto to_impl(aux::index_sequence<Ns...>, Ts&&... args) noexcept {
     using ctor_t = core::pool_t<typename ctor_arg_traits<T, Ns, Ts>::type...>;
-    using dependency = dependency<TScope, concepts::any_of<TExpected, T>, T, TName, TPriority, ctor_t>;
+    using dependency = dependency<TScope, typename any_of_traits<TExpected, T>::type, T, TName, TPriority, ctor_t>;
     return dependency{ctor_t{typename ctor_arg_traits<T, Ns, Ts>::type(static_cast<Ts&&>(args))...}};
   }
 };
@@ -2172,7 +2181,6 @@ struct any_type_fwd {
 };
 template <class>
 struct any_type_ref_fwd {
-  any_type_ref_fwd(...) {}
   template <class T>
   operator T();
   template <class T>
@@ -2195,6 +2203,7 @@ struct any_type_1st_fwd {
 };
 template <class TParent>
 struct any_type_1st_ref_fwd {
+  any_type_1st_ref_fwd(...) {}
   template <class T, class = __BOOST_DI_REQUIRES(!is_copy_ctor__<TParent, T>::value)>
   operator T();
   template <class T, class = __BOOST_DI_REQUIRES(!is_copy_ctor__<TParent, T>::value)>

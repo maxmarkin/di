@@ -222,8 +222,6 @@ struct any_type_fwd {
 
 template <class>
 struct any_type_ref_fwd {
-  any_type_ref_fwd(...){}
-
   template <class T>
   operator T();
 
@@ -251,6 +249,8 @@ struct any_type_1st_fwd {
 
 template <class TParent>
 struct any_type_1st_ref_fwd {
+  any_type_1st_ref_fwd(...) {}
+
   template <class T, class = __BOOST_DI_REQUIRES(!is_copy_ctor__<TParent, T>::value)>
   operator T();
 
