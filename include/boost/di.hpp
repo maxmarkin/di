@@ -1727,7 +1727,8 @@ class dependency : dependency_base,
                                     aux::decay_t<T>, aux::valid<>>) = 0>
   auto to(T&& object) noexcept {
     using dependency =
-        dependency<scopes::instance, deduce_traits_t<TExpected, int>, typename ref_traits<T>::type, TName, TPriority, TCtor>;
+        dependency<scopes::instance, deduce_traits_t<TExpected, typename any_of_traits<TExpected, aux::decay_t<T>>::type>,
+                   typename ref_traits<T>::type, TName, TPriority, TCtor>;
     return dependency{static_cast<T&&>(object)};
   }
   template <class T, class... Ts>
