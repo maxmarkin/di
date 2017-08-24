@@ -1151,7 +1151,7 @@ struct app4 {
 
 test bind_template_to_instance = [] {
   auto i = 42;
-  const auto injector = di::make_injector(di::bind<class External>().to(i));
+  const auto injector = di::make_injector(di::bind<class External>().to<int>(i));
   auto object = injector.create<app4>();
   static_expect(std::is_same<int, typename decltype(object)::type>::value);
   expect(42 == object.t);

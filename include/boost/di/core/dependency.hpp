@@ -140,7 +140,7 @@ class dependency : dependency_base,
   dependency() noexcept {}
 
   template <class T>
-  explicit dependency(T&& object) noexcept : scope_t(static_cast<T&&>(object)) { }
+  explicit dependency(T&& object) noexcept : scope_t(static_cast<T&&>(object))/*, TCtor{static_cast<TCtor&&>(object)}*/ { }
   explicit dependency(TCtor&& ctor) noexcept : TCtor{static_cast<TCtor&&>(ctor)} { }
 
   template <class T, __BOOST_DI_REQUIRES(aux::is_same<TName, no_name>::value && !aux::is_same<T, no_name>::value) = 0>
