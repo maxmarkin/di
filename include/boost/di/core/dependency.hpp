@@ -51,6 +51,12 @@ struct override {};
 template <class, int, class T>
 struct ctor_arg {
   explicit ctor_arg(T&& t) : value(static_cast<T&&>(t)) {}
+
+  template <class I, __BOOST_DI_REQUIRES(aux::is_convertible<T, I>::value) = 0>
+  constexpr operator I() const {
+    return value;
+  }
+
   constexpr operator T() const { return value; }
 
  private:
@@ -140,8 +146,8 @@ class dependency : dependency_base,
   dependency() noexcept {}
 
   template <class T>
-  explicit dependency(T&& object) noexcept : scope_t(static_cast<T&&>(object))/*, TCtor{static_cast<TCtor&&>(object)}*/ { }
-  explicit dependency(TCtor&& ctor) noexcept : TCtor{static_cast<TCtor&&>(ctor)} { }
+  explicit dependency(T&& object) noexcept : scope_t(static_cast<T&&>(object)) /*, TCtor{static_cast<TCtor&&>(object)}*/ {}
+  explicit dependency(TCtor&& ctor) noexcept : TCtor{static_cast<TCtor&&>(ctor)} {}
 
   template <class T, __BOOST_DI_REQUIRES(aux::is_same<TName, no_name>::value && !aux::is_same<T, no_name>::value) = 0>
   auto named() noexcept {
@@ -206,7 +212,10 @@ class dependency : dependency_base,
   }
 
 #if defined(__cpp_variable_templates)  // __pph__
-  dependency& operator()() noexcept { return *this; }
+  template <class... Ts>
+  auto operator()(Ts&&... args) noexcept {
+    return to_impl<TExpected>(aux::make_index_sequence<sizeof...(Ts)>{}, static_cast<Ts&&>(args)...);
+  }
 #endif  // __pph__
 
 #if defined(__MSVC__)  // __pph__

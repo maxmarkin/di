@@ -1614,6 +1614,10 @@ struct override {};
 template <class, int, class T>
 struct ctor_arg {
   explicit ctor_arg(T&& t) : value(static_cast<T&&>(t)) {}
+  template <class I, __BOOST_DI_REQUIRES(aux::is_convertible<T, I>::value) = 0>
+  constexpr operator I() const {
+    return value;
+  }
   constexpr operator T() const { return value; }
 
  private:
@@ -1741,7 +1745,10 @@ class dependency : dependency_base,
     return dependency<TScope, TExpected, TGiven, TName, override, TCtor>{static_cast<dependency&&>(*this)};
   }
 #if defined(__cpp_variable_templates)
-  dependency& operator()() noexcept { return *this; }
+  template <class... Ts>
+  auto operator()(Ts&&... args) noexcept {
+    return to_impl<TExpected>(aux::make_index_sequence<sizeof...(Ts)>{}, static_cast<Ts&&>(args)...);
+  }
 #endif
 #if defined(__MSVC__)
  public:
