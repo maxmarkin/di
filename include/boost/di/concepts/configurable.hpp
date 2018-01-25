@@ -67,7 +67,8 @@ auto is_configurable(const aux::false_type&) {
 
 template <class T>
 struct configurable__ {
-  using type = decltype(is_configurable<T>(decltype(configurable_impl(aux::declval<T>())){}));
+  using inner_type = decltype(configurable_impl(aux::declval<T>()));
+  using type = decltype(is_configurable<T>(inner_type{}));
 };
 
 template <class T>
